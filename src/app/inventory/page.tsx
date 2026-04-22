@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listListings } from "@/lib/storage";
 import { daysUntilNextMarkdown } from "@/lib/markdown";
 import MarkdownButton from "@/components/MarkdownButton";
+import EbayLinkStatus from "@/components/EbayLinkStatus";
 import type { Listing, ListingStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,19 @@ const STATUS_LABELS: Record<ListingStatus, string> = {
   unsold: "Unsold",
 };
 
-export default async function InventoryPage() {
+export default async function InventoryPage({
+  searchParams,
+}: {
+  // Next 16: searchParams is a Promise.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const firstOf = (v: string | string[] | undefined): string | undefined =>
+    Array.isArray(v) ? v[0] : v;
+  const linked = firstOf(params.linked) === "1";
+  const ebayError = firstOf(params.ebay_error);
+  const ebayErrorDescription = firstOf(params.ebay_error_description);
+
   const listings = await listListings();
   const byStatus = Object.fromEntries(
     STATUS_ORDER.map((s) => [s, listings.filter((l) => l.status === s)])
@@ -31,6 +44,12 @@ export default async function InventoryPage() {
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-4 pt-6 pb-28">
       <h1 className="text-2xl font-semibold tracking-tight">Inventory</h1>
+
+      <EbayLinkStatus
+        linked={linked}
+        error={ebayError}
+        errorDescription={ebayErrorDescription}
+      />
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         <Stat label="Drafts" value={byStatus.draft.length} />

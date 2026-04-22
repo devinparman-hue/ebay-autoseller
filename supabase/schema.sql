@@ -42,3 +42,30 @@ alter table public.listings enable row level security;
 insert into storage.buckets (id, name, public)
 values ('listing-photos', 'listing-photos', true)
 on conflict (id) do nothing;
+
+-- ──────────────────────────── ebay_tokens table ─────────────────────────────
+-- Stores the OAuth access + refresh tokens we get back from eBay after the
+-- user clicks "Link eBay" and completes the consent flow. One row per env
+-- (sandbox/production) — we're single-tenant for now, so we don't key by user.
+--
+-- access_token: short-lived (~2 hours), used as the Bearer for Sell API calls.
+-- refresh_token: long-lived (~18 months), used to mint a new access_token.
+-- expires_at / refresh_expires_at: absolute times, easier to reason about than
+-- the `expires_in` seconds eBay actually returns.
+-- scopes: space-delimited list of OAuth scopes granted, echoed back from eBay.
+create table if not exists public.ebay_tokens (
+  id                   uuid primary key default gen_random_uuid(),
+  env                  text not null check (env in ('sandbox','production')),
+  access_token         text not null,
+  refresh_token        text not null,
+  expires_at           timestamptz not null,
+  refresh_expires_at   timestamptz not null,
+  scopes               text not null default '',
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now()
+);
+
+-- Unique per env so upsert-by-env works for the Link flow and future re-links.
+create unique index if not exists ebay_tokens_env_idx on public.ebay_tokens (env);
+
+alter table public.ebay_tokens enable row level security;
