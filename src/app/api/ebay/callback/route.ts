@@ -16,7 +16,7 @@ import {
  *   ?error=<err>&error_description=<…>  — on failure / user cancel
  *
  * On success we exchange the code for tokens, persist them, clear the state
- * cookie, and bounce the user back to /inventory with a ?linked=1 flag.
+ * cookie, and bounce the user back to /settings/ebay with a ?linked=1 flag.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,8 +39,11 @@ export async function GET(req: NextRequest) {
     });
   };
 
-  const inventoryUrl = (query: string) =>
-    new URL(`/inventory?${query}`, url.origin);
+  // Where eBay-link results land. Used to be /inventory; moved to
+  // /settings/ebay so the user can also see token state + the manual
+  // paste fallback on the same page.
+  const settingsUrl = (query: string) =>
+    new URL(`/settings/ebay?${query}`, url.origin);
 
   // User cancelled or eBay rejected the request.
   if (oauthError) {
@@ -50,13 +53,13 @@ export async function GET(req: NextRequest) {
       (oauthErrorDescription
         ? `&ebay_error_description=${encodeURIComponent(oauthErrorDescription)}`
         : "");
-    return NextResponse.redirect(inventoryUrl(q), { status: 303 });
+    return NextResponse.redirect(settingsUrl(q), { status: 303 });
   }
 
   if (!code || !state) {
     clearStateCookie();
     return NextResponse.redirect(
-      inventoryUrl("ebay_error=missing_code_or_state"),
+      settingsUrl("ebay_error=missing_code_or_state"),
       { status: 303 }
     );
   }
@@ -65,7 +68,7 @@ export async function GET(req: NextRequest) {
     // Either the cookie expired (took >10 min on eBay's consent page) or
     // someone's trying to CSRF us. Either way, refuse.
     clearStateCookie();
-    return NextResponse.redirect(inventoryUrl("ebay_error=state_mismatch"), {
+    return NextResponse.redirect(settingsUrl("ebay_error=state_mismatch"), {
       status: 303,
     });
   }
@@ -79,7 +82,7 @@ export async function GET(req: NextRequest) {
     const q =
       `ebay_error=token_exchange_failed` +
       `&ebay_error_description=${encodeURIComponent(message)}`;
-    return NextResponse.redirect(inventoryUrl(q), { status: 303 });
+    return NextResponse.redirect(settingsUrl(q), { status: 303 });
   }
 
   try {
@@ -90,9 +93,9 @@ export async function GET(req: NextRequest) {
     const q =
       `ebay_error=save_tokens_failed` +
       `&ebay_error_description=${encodeURIComponent(message)}`;
-    return NextResponse.redirect(inventoryUrl(q), { status: 303 });
+    return NextResponse.redirect(settingsUrl(q), { status: 303 });
   }
 
   clearStateCookie();
-  return NextResponse.redirect(inventoryUrl("linked=1"), { status: 303 });
+  return NextResponse.redirect(settingsUrl("linked=1"), { status: 303 });
 }
