@@ -15,7 +15,18 @@ const STATUS_LABELS: Record<ListingStatus, string> = {
 };
 
 export default async function InventoryPage() {
-  const listings = await listListings();
+  // Catch the listings load so a Supabase / schema problem surfaces as a
+  // visible error on the page instead of crashing the whole route. While
+  // we're debugging the eBay flow we'd rather see "couldn't load
+  // listings: <reason>" than a generic 500.
+  let listings: Listing[] = [];
+  let loadError: string | null = null;
+  try {
+    listings = await listListings();
+  } catch (err) {
+    loadError = err instanceof Error ? err.message : String(err);
+  }
+
   const byStatus = Object.fromEntries(
     STATUS_ORDER.map((s) => [s, listings.filter((l) => l.status === s)])
   ) as Record<ListingStatus, typeof listings>;
@@ -39,6 +50,13 @@ export default async function InventoryPage() {
           eBay settings
         </Link>
       </div>
+
+      {loadError && (
+        <div className="mt-4 rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-xs text-red-700 dark:text-red-300">
+          <div className="font-semibold">Couldn&apos;t load listings.</div>
+          <div className="mt-1 break-words font-mono">{loadError}</div>
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-3 gap-2">
         <Stat label="Drafts" value={byStatus.draft.length} />
