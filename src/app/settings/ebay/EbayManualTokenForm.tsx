@@ -61,10 +61,11 @@ export default function EbayManualTokenForm() {
         textarea
       />
       <Field
-        label="Refresh token"
+        label="Refresh token (optional — leave blank if eBay only gave you an access token)"
         name="refreshToken"
         placeholder="v^1.1#i^1#... (long string)"
         textarea
+        required={false}
       />
       <div className="grid grid-cols-2 gap-3">
         <Field
@@ -72,6 +73,7 @@ export default function EbayManualTokenForm() {
           name="expiresIn"
           placeholder="7200"
           type="number"
+          defaultValue="7200"
         />
         <Field
           label="Refresh expires in (seconds, optional)"
@@ -109,6 +111,7 @@ function Field({
   type = "text",
   textarea = false,
   required = true,
+  defaultValue,
 }: {
   label: string;
   name: string;
@@ -116,6 +119,7 @@ function Field({
   type?: string;
   textarea?: boolean;
   required?: boolean;
+  defaultValue?: string;
 }) {
   return (
     <label className="block">
@@ -125,6 +129,7 @@ function Field({
           name={name}
           placeholder={placeholder}
           required={required}
+          defaultValue={defaultValue}
           rows={3}
           className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs font-mono"
         />
@@ -134,6 +139,7 @@ function Field({
           type={type}
           placeholder={placeholder}
           required={required}
+          defaultValue={defaultValue}
           className="mt-1 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1.5 text-xs"
         />
       )}

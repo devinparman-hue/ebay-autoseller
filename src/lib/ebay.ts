@@ -317,11 +317,20 @@ export async function getValidAccessToken(): Promise<string> {
   if (expiresAtMs - now > 60_000) {
     return tokens.accessToken;
   }
-  // Access token is expired or nearly so — refresh.
+  // Access token is expired or nearly so — try to refresh. If we don't
+  // have a refresh token (manual-paste flow only gave us an access token),
+  // surface a specific re-paste message rather than letting eBay reject
+  // an empty refresh_token with a less obvious error.
+  if (!tokens.refreshToken) {
+    throw new Error(
+      "eBay access token expired and no refresh token on file. " +
+        "Re-paste a fresh access token at /settings/ebay."
+    );
+  }
   const refreshExpiresAtMs = new Date(tokens.refreshExpiresAt).getTime();
   if (refreshExpiresAtMs <= now) {
     throw new Error(
-      "eBay refresh token expired. Click 'Link eBay' again to re-authorize."
+      "eBay refresh token expired. Re-link your eBay account at /settings/ebay."
     );
   }
   const refreshed = await refreshAccessToken(tokens.refreshToken);

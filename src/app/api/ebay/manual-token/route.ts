@@ -66,12 +66,11 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (!refreshToken) {
-    return NextResponse.json(
-      { error: "missing_refresh_token" },
-      { status: 400 }
-    );
-  }
+  // Refresh token is OPTIONAL. The dev-portal "Get a User Token Here" flow
+  // gives you only an access token (~2h lifetime); the full OAuth flow gives
+  // both. We accept either case — when refresh is missing, getValidAccessToken
+  // will throw a clear "needs re-paste" error once the access token expires
+  // instead of trying (and failing) to refresh it.
   if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
     return NextResponse.json(
       {
@@ -118,13 +117,17 @@ export async function POST(req: NextRequest) {
   }
 
   const now = Date.now();
+  // When no refresh token was provided, set refreshExpiresAt to now (i.e.
+  // already expired) so getValidAccessToken short-circuits to "re-paste"
+  // the moment the access token expires, rather than trying to refresh
+  // with an empty token.
   const tokens = {
     accessToken,
     refreshToken,
     expiresAt: new Date(now + expiresIn * 1000).toISOString(),
-    refreshExpiresAt: new Date(
-      now + refreshExpiresIn * 1000
-    ).toISOString(),
+    refreshExpiresAt: refreshToken
+      ? new Date(now + refreshExpiresIn * 1000).toISOString()
+      : new Date(now).toISOString(),
     scopes,
   };
 
