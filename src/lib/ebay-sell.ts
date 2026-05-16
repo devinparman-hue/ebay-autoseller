@@ -118,38 +118,126 @@ export interface PolicyIds {
 }
 
 /**
- * Fetch one of each kind of business policy from the user's account. If
- * any are missing, throw a clear instruction pointing the user at the
- * seller hub where they're created.
+ * Get the IDs of one of each kind of business policy, creating sensible
+ * defaults if any are missing. Sandbox seller hub is flaky and routinely
+ * bounces to /n/error when you try to create policies via the UI; doing
+ * it via API sidesteps all of that.
+ *
+ * If the user already has policies (e.g., they configured them manually
+ * in seller hub or via an earlier post), we use the first of each. Only
+ * the missing ones get created.
  */
 export async function getPolicies(): Promise<PolicyIds> {
-  const q = `marketplace_id=${DEFAULT_MARKETPLACE}`;
-  const [fulfillment, payment, ret] = await Promise.all([
-    ebayFetch<PolicyListResponse>(`/sell/account/v1/fulfillment_policy?${q}`),
-    ebayFetch<PolicyListResponse>(`/sell/account/v1/payment_policy?${q}`),
-    ebayFetch<PolicyListResponse>(`/sell/account/v1/return_policy?${q}`),
-  ]);
+  const [fulfillmentPolicyId, paymentPolicyId, returnPolicyId] =
+    await Promise.all([
+      ensureFulfillmentPolicy(),
+      ensurePaymentPolicy(),
+      ensureReturnPolicy(),
+    ]);
+  return { fulfillmentPolicyId, paymentPolicyId, returnPolicyId };
+}
 
-  const f = fulfillment.fulfillmentPolicies?.[0]?.fulfillmentPolicyId;
-  const p = payment.paymentPolicies?.[0]?.paymentPolicyId;
-  const r = ret.returnPolicies?.[0]?.returnPolicyId;
+const POLICY_QUERY = `marketplace_id=${DEFAULT_MARKETPLACE}`;
+const DEFAULT_CATEGORY_TYPES = [
+  { name: "ALL_EXCLUDING_MOTORS_VEHICLES" as const },
+];
 
-  const missing: string[] = [];
-  if (!f) missing.push("fulfillment");
-  if (!p) missing.push("payment");
-  if (!r) missing.push("return");
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing eBay business policies: ${missing.join(", ")}. ` +
-        `Create them in your sandbox seller account at ` +
-        `https://www.sandbox.ebay.com/sh/policies/intro and try again.`
-    );
-  }
-  return {
-    fulfillmentPolicyId: f!,
-    paymentPolicyId: p!,
-    returnPolicyId: r!,
-  };
+async function ensureFulfillmentPolicy(): Promise<string> {
+  const list = await ebayFetch<PolicyListResponse>(
+    `/sell/account/v1/fulfillment_policy?${POLICY_QUERY}`
+  );
+  const existing = list.fulfillmentPolicies?.[0]?.fulfillmentPolicyId;
+  if (existing) return existing;
+
+  // No fulfillment policy on file — make a sensible default. USPS Ground
+  // Advantage flat-rate $5, 3-day handling, US only. Plenty for sandbox
+  // testing; the user can replace it later via seller hub if they care
+  // about real shipping economics.
+  const created = await ebayFetch<{ fulfillmentPolicyId: string }>(
+    "/sell/account/v1/fulfillment_policy",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Default Fulfillment",
+        description: "Auto-created by ebay-lister",
+        marketplaceId: DEFAULT_MARKETPLACE,
+        categoryTypes: DEFAULT_CATEGORY_TYPES,
+        handlingTime: { value: 3, unit: "DAY" },
+        shippingOptions: [
+          {
+            optionType: "DOMESTIC",
+            costType: "FLAT_RATE",
+            shippingServices: [
+              {
+                sortOrder: 1,
+                shippingCarrierCode: "USPS",
+                shippingServiceCode: "USPSGroundAdvantage",
+                freeShipping: false,
+                shippingCost: { value: "5.00", currency: DEFAULT_CURRENCY },
+                buyerResponsibleForShipping: false,
+                buyerResponsibleForPickup: false,
+              },
+            ],
+          },
+        ],
+      }),
+    }
+  );
+  return created.fulfillmentPolicyId;
+}
+
+async function ensurePaymentPolicy(): Promise<string> {
+  const list = await ebayFetch<PolicyListResponse>(
+    `/sell/account/v1/payment_policy?${POLICY_QUERY}`
+  );
+  const existing = list.paymentPolicies?.[0]?.paymentPolicyId;
+  if (existing) return existing;
+
+  // Managed Payments accounts don't list payment methods explicitly;
+  // eBay handles it. immediatePay=false avoids buyer-side friction.
+  const created = await ebayFetch<{ paymentPolicyId: string }>(
+    "/sell/account/v1/payment_policy",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Default Payment",
+        description: "Auto-created by ebay-lister",
+        marketplaceId: DEFAULT_MARKETPLACE,
+        categoryTypes: DEFAULT_CATEGORY_TYPES,
+        immediatePay: false,
+      }),
+    }
+  );
+  return created.paymentPolicyId;
+}
+
+async function ensureReturnPolicy(): Promise<string> {
+  const list = await ebayFetch<PolicyListResponse>(
+    `/sell/account/v1/return_policy?${POLICY_QUERY}`
+  );
+  const existing = list.returnPolicies?.[0]?.returnPolicyId;
+  if (existing) return existing;
+
+  // 30-day buyer-paid returns. Reasonable middle ground for a household
+  // reseller — protects buyers without making returns the seller's
+  // problem to ship back.
+  const created = await ebayFetch<{ returnPolicyId: string }>(
+    "/sell/account/v1/return_policy",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Default Return",
+        description: "Auto-created by ebay-lister",
+        marketplaceId: DEFAULT_MARKETPLACE,
+        categoryTypes: DEFAULT_CATEGORY_TYPES,
+        returnsAccepted: true,
+        returnPeriod: { value: 30, unit: "DAY" },
+        returnShippingCostPayer: "BUYER",
+        returnMethod: "MONEY_BACK",
+      }),
+    }
+  );
+  return created.returnPolicyId;
 }
 
 /* -------------------------- Inventory location -------------------------- */
