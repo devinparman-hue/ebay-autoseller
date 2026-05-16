@@ -1,19 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fileToCompressedDataUrl } from "@/lib/image";
-import {
-  preloadBackgroundRemover,
-  removeBackground,
-} from "@/lib/bg-remove";
 import { enqueueCapture } from "@/lib/pending-queue";
 import { useOnline } from "@/lib/use-online";
 
 interface Photo {
   id: string;
   dataUrl: string;
-  processing: boolean;
 }
 
 function newPhotoId() {
@@ -27,12 +22,6 @@ export default function CapturePage() {
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
-
-  // Warm up the background-removal model as soon as the page loads so the
-  // first photo doesn't pay the full cold-start download.
-  useEffect(() => {
-    preloadBackgroundRemover();
-  }, []);
 
   async function handleFiles(files: FileList | null) {
     if (!files) return;
@@ -50,7 +39,6 @@ export default function CapturePage() {
         newEntries.push({
           id: newPhotoId(),
           dataUrl: compressed,
-          processing: true,
         });
       } catch (e) {
         console.error(e);
@@ -59,20 +47,6 @@ export default function CapturePage() {
 
     if (newEntries.length === 0) return;
     setPhotos((prev) => [...prev, ...newEntries]);
-
-    // Process backgrounds in parallel; update each photo as it finishes.
-    newEntries.forEach((entry) => {
-      void (async () => {
-        const cleaned = await removeBackground(entry.dataUrl);
-        setPhotos((prev) =>
-          prev.map((p) =>
-            p.id === entry.id
-              ? { ...p, dataUrl: cleaned, processing: false }
-              : p
-          )
-        );
-      })();
-    });
   }
 
   function removePhoto(id: string) {
@@ -91,7 +65,6 @@ export default function CapturePage() {
 
   async function analyze() {
     if (photos.length === 0) return;
-    if (photos.some((p) => p.processing)) return;
 
     const photoData = photos.map((p) => p.dataUrl);
 
@@ -131,8 +104,7 @@ export default function CapturePage() {
     }
   }
 
-  const processingCount = photos.filter((p) => p.processing).length;
-  const ready = photos.length > 0 && processingCount === 0;
+  const ready = photos.length > 0;
 
   // Track connectivity so the CTA reads honestly.
   const online = useOnline();
@@ -141,8 +113,7 @@ export default function CapturePage() {
     <main className="flex-1 w-full max-w-3xl mx-auto px-4 pt-6 pb-28">
       <h1 className="text-2xl font-semibold tracking-tight">New listing</h1>
       <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-        Take or upload 1–8 photos. Backgrounds are cleaned automatically before
-        the AI drafts your listing.
+        Take or upload 1–8 photos. The AI will draft your listing from them.
       </p>
 
       <div className="mt-6 grid grid-cols-3 gap-2">
@@ -150,13 +121,6 @@ export default function CapturePage() {
           <div
             key={photo.id}
             className="relative aspect-square rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900"
-            style={{
-              // Checkerboard so transparency is visible after bg removal.
-              backgroundImage:
-                "linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)",
-              backgroundSize: "16px 16px",
-              backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
-            }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -164,14 +128,6 @@ export default function CapturePage() {
               alt="item photo"
               className="w-full h-full object-cover"
             />
-            {photo.processing && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/45 backdrop-blur-sm text-white text-[10px] font-medium">
-                <div className="flex flex-col items-center gap-1">
-                  <Spinner />
-                  <span>Removing bg…</span>
-                </div>
-              </div>
-            )}
             <button
               type="button"
               onClick={() => removePhoto(photo.id)}
@@ -230,45 +186,15 @@ export default function CapturePage() {
             ? "Analyzing…"
             : photos.length === 0
               ? "Add a photo to continue"
-              : processingCount > 0
-                ? `Cleaning ${processingCount} photo${
-                    processingCount === 1 ? "" : "s"
-                  }…`
-                : !online
-                  ? `Queue ${photos.length} photo${
-                      photos.length === 1 ? "" : "s"
-                    } for later`
-                  : `Analyze ${photos.length} photo${
-                      photos.length === 1 ? "" : "s"
-                    }`}
+              : !online
+                ? `Queue ${photos.length} photo${
+                    photos.length === 1 ? "" : "s"
+                  } for later`
+                : `Analyze ${photos.length} photo${
+                    photos.length === 1 ? "" : "s"
+                  }`}
         </button>
       </div>
     </main>
-  );
-}
-
-function Spinner() {
-  return (
-    <svg
-      className="h-5 w-5 animate-spin"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle
-        cx="12"
-        cy="12"
-        r="9"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeOpacity="0.25"
-      />
-      <path
-        d="M12 3a9 9 0 0 1 9 9"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }
