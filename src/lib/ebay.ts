@@ -60,14 +60,17 @@ export function getEbayConfig(): EbayConfig {
     );
   }
   const appId = process.env.EBAY_APP_ID;
-  const devId = process.env.EBAY_DEV_ID;
   const certId = process.env.EBAY_CERT_ID;
-  const ruName = process.env.EBAY_RU_NAME;
+  // devId and ruName aren't used by the manual-token paste + Sell API
+  // posting flow — only by the OAuth connect/refresh path. Keep them
+  // optional so production setup doesn't require registering a production
+  // RuName just to post with a pasted token. appId/certId stay required
+  // (needed if/when we refresh a token).
+  const devId = process.env.EBAY_DEV_ID ?? "";
+  const ruName = process.env.EBAY_RU_NAME ?? "";
   const missing: string[] = [];
   if (!appId) missing.push("EBAY_APP_ID");
-  if (!devId) missing.push("EBAY_DEV_ID");
   if (!certId) missing.push("EBAY_CERT_ID");
-  if (!ruName) missing.push("EBAY_RU_NAME");
   if (missing.length > 0) {
     throw new Error(
       `eBay not configured. Missing: ${missing.join(", ")}. ` +
@@ -77,9 +80,9 @@ export function getEbayConfig(): EbayConfig {
   return {
     env,
     appId: appId!,
-    devId: devId!,
+    devId,
     certId: certId!,
-    ruName: ruName!,
+    ruName,
     authHost:
       env === "sandbox"
         ? "https://auth.sandbox.ebay.com"
@@ -101,6 +104,12 @@ export function getEbayConfig(): EbayConfig {
  */
 export function authorizeUrl(state: string): string {
   const cfg = getEbayConfig();
+  if (!cfg.ruName) {
+    throw new Error(
+      "EBAY_RU_NAME is not set, so the OAuth flow can't run. Either set it, " +
+        "or use the manual token paste at /settings/ebay (which doesn't need a RuName)."
+    );
+  }
   const params = new URLSearchParams({
     client_id: cfg.appId,
     response_type: "code",
