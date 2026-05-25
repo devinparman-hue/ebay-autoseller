@@ -51,18 +51,14 @@ export default function ReviewClient({
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        // Surface eBay's actual rejection reason, not just the generic
-        // top-level message. `detail` is whatever eBay's API returned —
-        // usually { errors: [{ message, longMessage, parameters }] }.
-        let msg = body?.error ?? `Post failed (${res.status})`;
-        if (body?.detail) {
-          const detail =
-            typeof body.detail === "string"
-              ? body.detail
-              : JSON.stringify(body.detail, null, 2);
-          msg += `\n\n${detail}`;
+        // Dump the entire error object — status, path, and eBay's detail.
+        // An empty detail.errors array is useless on its own; the HTTP
+        // status + failing path tell us which call broke.
+        if (body) {
+          setError(JSON.stringify(body, null, 2));
+        } else {
+          setError(`Post failed (${res.status})`);
         }
-        setError(msg);
         return;
       }
       router.push("/inventory");
