@@ -50,8 +50,19 @@ export default function ReviewClient({
         method: "POST",
       });
       if (!res.ok) {
-        const { error: err } = await res.json().catch(() => ({ error: null }));
-        setError(err ?? `Post failed (${res.status})`);
+        const body = await res.json().catch(() => null);
+        // Surface eBay's actual rejection reason, not just the generic
+        // top-level message. `detail` is whatever eBay's API returned —
+        // usually { errors: [{ message, longMessage, parameters }] }.
+        let msg = body?.error ?? `Post failed (${res.status})`;
+        if (body?.detail) {
+          const detail =
+            typeof body.detail === "string"
+              ? body.detail
+              : JSON.stringify(body.detail, null, 2);
+          msg += `\n\n${detail}`;
+        }
+        setError(msg);
         return;
       }
       router.push("/inventory");
@@ -232,7 +243,7 @@ export default function ReviewClient({
       </div>
 
       {error && (
-        <div className="mt-4 p-3 rounded-lg bg-red-50 text-red-900 text-sm dark:bg-red-950 dark:text-red-200">
+        <div className="mt-4 p-3 rounded-lg bg-red-50 text-red-900 text-xs dark:bg-red-950 dark:text-red-200 whitespace-pre-wrap break-words font-mono max-h-72 overflow-auto">
           {error}
         </div>
       )}
