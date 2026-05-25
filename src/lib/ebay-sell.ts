@@ -209,12 +209,12 @@ async function ensureFulfillmentPolicy(): Promise<string> {
   const existing = list.fulfillmentPolicies?.[0]?.fulfillmentPolicyId;
   if (existing) return existing;
 
-  // No fulfillment policy on file — make a sensible default. USPS Priority
-  // Mail flat-rate $5, 3-day handling, US only. (We use Priority Mail
-  // rather than Ground Advantage because the latter isn't in eBay
-  // sandbox's shipping-service list and gets rejected.) The user can
-  // replace it later via seller hub if they care about real shipping
-  // economics.
+  // No fulfillment policy on file — make a sensible default: flat-rate $5,
+  // 3-day handling, US only, using eBay's GENERIC "standard shipping"
+  // service code. Generic codes (ShippingMethodStandard) aren't tied to a
+  // carrier, so they sidestep the "is this specific USPS code in sandbox's
+  // list" problem that rejected USPSGroundAdvantage and USPSPriorityMail.
+  // The user can pick a real carrier service later via seller hub.
   const created = await ebayFetch<{ fulfillmentPolicyId: string }>(
     "/sell/account/v1/fulfillment_policy",
     {
@@ -232,8 +232,7 @@ async function ensureFulfillmentPolicy(): Promise<string> {
             shippingServices: [
               {
                 sortOrder: 1,
-                shippingCarrierCode: "USPS",
-                shippingServiceCode: "USPSPriorityMail",
+                shippingServiceCode: "ShippingMethodStandard",
                 freeShipping: false,
                 shippingCost: { value: "5.00", currency: DEFAULT_CURRENCY },
                 buyerResponsibleForShipping: false,
