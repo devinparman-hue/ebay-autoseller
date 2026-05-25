@@ -23,6 +23,11 @@ import { postToEbay, EbayApiError } from "@/lib/ebay-sell";
  * the existing UI that shows where a listing is posted.
  */
 export const runtime = "nodejs";
+// Posting makes many sequential eBay calls (opt-in, policies w/ retries,
+// location, category, inventory item, offer, publish). Give it headroom so
+// retry delays don't trip the default function timeout. (Capped to the
+// Vercel plan's max — harmless if the plan is lower.)
+export const maxDuration = 60;
 
 export async function POST(
   _req: NextRequest,
