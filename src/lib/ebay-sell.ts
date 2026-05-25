@@ -128,6 +128,10 @@ export interface PolicyIds {
  * the missing ones get created.
  */
 export async function getPolicies(): Promise<PolicyIds> {
+  // eBay rejects policy creation/use with errorId 20403 ("User is not
+  // eligible for Business Policy") until the account opts into the
+  // SELLING_POLICY_MANAGEMENT program. Do that first, then create.
+  await ensureBusinessPolicyOptIn();
   const [fulfillmentPolicyId, paymentPolicyId, returnPolicyId] =
     await Promise.all([
       ensureFulfillmentPolicy(),
@@ -135,6 +139,32 @@ export async function getPolicies(): Promise<PolicyIds> {
       ensureReturnPolicy(),
     ]);
   return { fulfillmentPolicyId, paymentPolicyId, returnPolicyId };
+}
+
+interface OptedInProgramsResponse {
+  programs?: Array<{ programType: string }>;
+}
+
+/**
+ * Opt the account into the Business Policy program if it isn't already.
+ * Required before any business policy can be created or attached to an
+ * offer. Idempotent — we check the current opt-ins first so re-running a
+ * post doesn't error on a redundant opt-in.
+ */
+async function ensureBusinessPolicyOptIn(): Promise<void> {
+  const res = await ebayFetch<OptedInProgramsResponse>(
+    "/sell/account/v1/program/get_opted_in_programs"
+  );
+  const optedIn = res.programs?.some(
+    (p) => p.programType === "SELLING_POLICY_MANAGEMENT"
+  );
+  if (optedIn) return;
+
+  await ebayFetch("/sell/account/v1/program/opt_in", {
+    method: "POST",
+    body: JSON.stringify({ programType: "SELLING_POLICY_MANAGEMENT" }),
+    skipBody: true,
+  });
 }
 
 const POLICY_QUERY = `marketplace_id=${DEFAULT_MARKETPLACE}`;
