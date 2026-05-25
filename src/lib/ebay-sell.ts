@@ -132,13 +132,43 @@ export async function getPolicies(): Promise<PolicyIds> {
   // eligible for Business Policy") until the account opts into the
   // SELLING_POLICY_MANAGEMENT program. Do that first, then create.
   await ensureBusinessPolicyOptIn();
+  // Sandbox 500s intermittently right after opt-in (propagation lag) and
+  // is generally flaky. Retry each ensure on 5xx. The list-then-create
+  // pattern makes retries safe: a policy that got created despite a 500
+  // is found on the next list and reused instead of duplicated.
   const [fulfillmentPolicyId, paymentPolicyId, returnPolicyId] =
     await Promise.all([
-      ensureFulfillmentPolicy(),
-      ensurePaymentPolicy(),
-      ensureReturnPolicy(),
+      withRetry(() => ensureFulfillmentPolicy()),
+      withRetry(() => ensurePaymentPolicy()),
+      withRetry(() => ensureReturnPolicy()),
     ]);
   return { fulfillmentPolicyId, paymentPolicyId, returnPolicyId };
+}
+
+/**
+ * Retry a function on eBay 5xx responses (transient sandbox flakiness /
+ * propagation lag). Does NOT retry 4xx — those are our bugs, not eBay's.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  tries = 3,
+  delayMs = 3000
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const retriable = err instanceof EbayApiError && err.status >= 500;
+      if (retriable && attempt < tries - 1) {
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 interface OptedInProgramsResponse {
