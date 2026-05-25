@@ -75,7 +75,16 @@ async function ebayFetch<T = unknown>(
     } catch {
       body = text.slice(0, 500);
     }
-    throw new EbayApiError(res.status, body, path);
+    // Include the HTTP method + eBay's request id in the path so an empty
+    // error body still tells us which call (GET list vs POST create) broke
+    // and gives something to grep eBay logs with.
+    const method = (rest.method ?? "GET").toUpperCase();
+    const reqId = res.headers.get("x-ebay-c-request-id") ?? "";
+    throw new EbayApiError(
+      res.status,
+      body,
+      `${method} ${path}${reqId ? ` [${reqId}]` : ""}`
+    );
   }
   if (skipBody || res.status === 204) {
     return undefined as unknown as T;
@@ -132,16 +141,14 @@ export async function getPolicies(): Promise<PolicyIds> {
   // eligible for Business Policy") until the account opts into the
   // SELLING_POLICY_MANAGEMENT program. Do that first, then create.
   await ensureBusinessPolicyOptIn();
-  // Sandbox 500s intermittently right after opt-in (propagation lag) and
-  // is generally flaky. Retry each ensure on 5xx. The list-then-create
-  // pattern makes retries safe: a policy that got created despite a 500
-  // is found on the next list and reused instead of duplicated.
-  const [fulfillmentPolicyId, paymentPolicyId, returnPolicyId] =
-    await Promise.all([
-      withRetry(() => ensureFulfillmentPolicy()),
-      withRetry(() => ensurePaymentPolicy()),
-      withRetry(() => ensureReturnPolicy()),
-    ]);
+  // Sequential (not Promise.all) so behavior is deterministic: each policy
+  // fully resolves before the next starts, and an in-flight retry on one
+  // isn't abandoned when another rejects. Retry each on 5xx — the
+  // list-then-create pattern makes retries safe (a policy created despite a
+  // 500 is found on the next list and reused, not duplicated).
+  const fulfillmentPolicyId = await withRetry(() => ensureFulfillmentPolicy());
+  const paymentPolicyId = await withRetry(() => ensurePaymentPolicy());
+  const returnPolicyId = await withRetry(() => ensureReturnPolicy());
   return { fulfillmentPolicyId, paymentPolicyId, returnPolicyId };
 }
 
