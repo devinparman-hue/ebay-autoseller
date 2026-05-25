@@ -315,11 +315,62 @@ interface LocationResponse {
   name?: string;
 }
 
+interface SellerAddress {
+  addressLine1: string;
+  city: string;
+  stateOrProvince: string;
+  postalCode: string;
+  country: string;
+}
+
+/**
+ * Resolve the ship-from address for the inventory location. This is shown
+ * to buyers and drives shipping-cost zones, so it must be real in
+ * production. We read it from SELLER_* env vars.
+ *
+ * In production we REFUSE to fall back to placeholders — better to fail the
+ * post with a clear "set your address" error than to publish a real listing
+ * shipping from a fake California address. In sandbox the placeholders are
+ * fine (nobody's actually buying).
+ */
+function getSellerAddress(): SellerAddress {
+  const cfg = getEbayConfig();
+  const line1 = process.env.SELLER_ADDRESS_LINE1;
+  const city = process.env.SELLER_CITY;
+  const state = process.env.SELLER_STATE;
+  const postalCode = process.env.SELLER_POSTAL_CODE;
+  const country = process.env.SELLER_COUNTRY || "US";
+
+  if (cfg.env === "production") {
+    const missing: string[] = [];
+    if (!line1) missing.push("SELLER_ADDRESS_LINE1");
+    if (!city) missing.push("SELLER_CITY");
+    if (!state) missing.push("SELLER_STATE");
+    if (!postalCode) missing.push("SELLER_POSTAL_CODE");
+    if (missing.length > 0) {
+      throw new Error(
+        `Production listings need a real ship-from address. Set ${missing.join(
+          ", "
+        )} in your Vercel env vars (your real address — city/state/ZIP are ` +
+          `shown to buyers and set shipping zones).`
+      );
+    }
+  }
+
+  return {
+    addressLine1: line1 || "123 Test Street",
+    city: city || "San Jose",
+    stateOrProvince: state || "CA",
+    postalCode: postalCode || "95125",
+    country,
+  };
+}
+
 /**
  * Make sure we have an inventory location to attach offers to. Required
  * by eBay even for digital-only sellers. We use a single fixed key and
- * auto-create it the first time with safe placeholder values. The user can
- * edit it later via Seller Hub if they want a real address shown.
+ * auto-create it the first time using the SELLER_* address (see
+ * getSellerAddress). The user can edit it later via Seller Hub.
  */
 export async function ensureInventoryLocation(): Promise<string> {
   try {
@@ -331,21 +382,14 @@ export async function ensureInventoryLocation(): Promise<string> {
     if (!(err instanceof EbayApiError) || err.status !== 404) {
       throw err;
     }
-    // Doesn't exist — create it.
+    // Doesn't exist — create it with the configured ship-from address.
+    const address = getSellerAddress();
     await ebayFetch(
       `/sell/inventory/v1/location/${DEFAULT_LOCATION_KEY}`,
       {
         method: "POST",
         body: JSON.stringify({
-          location: {
-            address: {
-              addressLine1: "123 Test Street",
-              city: "San Jose",
-              stateOrProvince: "CA",
-              postalCode: "95125",
-              country: "US",
-            },
-          },
+          location: { address },
           locationInstructions: "Auto-created by ebay-lister",
           name: "Default Location",
           merchantLocationStatus: "ENABLED",
