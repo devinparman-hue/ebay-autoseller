@@ -262,17 +262,18 @@ async function ensurePaymentPolicy(): Promise<string> {
   if (existing) return existing;
 
   // Managed Payments accounts don't list payment methods explicitly;
-  // eBay handles it. immediatePay=false avoids buyer-side friction.
+  // eBay handles it. Minimal body — production has rejected fuller bodies
+  // (with description, immediatePay) with a useless 500 + empty errors[],
+  // so we send only the three required fields. Add fields back only if a
+  // specific error tells us to.
   const created = await ebayFetch<{ paymentPolicyId: string }>(
     "/sell/account/v1/payment_policy",
     {
       method: "POST",
       body: JSON.stringify({
         name: "Default Payment",
-        description: "Auto-created by ebay-lister",
         marketplaceId: DEFAULT_MARKETPLACE,
         categoryTypes: DEFAULT_CATEGORY_TYPES,
-        immediatePay: false,
       }),
     }
   );
