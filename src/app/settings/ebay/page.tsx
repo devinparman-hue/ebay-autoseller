@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { isEbayLinked, getStoredTokens } from "@/lib/ebay";
 import EbayManualTokenForm from "./EbayManualTokenForm";
+import EbayCodeForm from "./EbayCodeForm";
 
 /**
  * eBay account settings. Two ways to link:
@@ -104,25 +105,43 @@ export default async function EbaySettingsPage({
         )}
       </div>
 
-      {/* Option A: OAuth */}
+      {/* Option A: OAuth sign-in + paste the landing URL */}
       <section className="mt-6">
-        <h2 className="text-sm font-medium">Option A — sign in with eBay</h2>
+        <h2 className="text-sm font-medium">
+          Option A — long-term link (recommended)
+        </h2>
         <p className="mt-1 text-xs text-zinc-500">
-          Standard OAuth flow. Requires a sandbox test user, and the RuName
-          registered in your dev portal must have the auth-accepted URL set.
-          If it doesn&apos;t work, fall back to Option B below.
+          Gets a refresh token (~18 months), so the app renews access
+          automatically and you never paste tokens again. Two steps:
         </p>
+        <ol className="mt-2 text-xs text-zinc-500 list-decimal pl-4 space-y-1">
+          <li>
+            Click the button below, sign in with your eBay selling account,
+            and click <em>Agree</em>. You&apos;ll land on an eBay page saying
+            &quot;Authorization successfully completed.&quot;
+          </li>
+          <li>
+            Copy the <strong>entire URL</strong> from the browser address bar
+            on that page, come back here, and paste it below within ~5
+            minutes.
+          </li>
+        </ol>
         <a
           href="/api/ebay/connect"
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-block mt-3 text-xs px-3 py-1.5 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-black"
         >
-          {hasTokens ? "Re-link via OAuth" : "Link eBay via OAuth"}
+          Step 1 — Sign in with eBay
         </a>
+        <EbayCodeForm />
       </section>
 
       {/* Option B: paste */}
       <section className="mt-8">
-        <h2 className="text-sm font-medium">Option B — paste tokens</h2>
+        <h2 className="text-sm font-medium">
+          Option B — paste tokens (fallback, ~2-hour link)
+        </h2>
         <p className="mt-1 text-xs text-zinc-500">
           Use eBay&apos;s developer-portal{" "}
           <a
