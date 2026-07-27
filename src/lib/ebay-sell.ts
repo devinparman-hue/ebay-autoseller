@@ -25,7 +25,12 @@ import type { ConditionGrade, Listing } from "./types";
  */
 
 const DEFAULT_LOCATION_KEY = "default";
-const DEFAULT_LOCALE = "en_US";
+// BCP-47 tag for the Content-Language / Accept-Language HTTP headers.
+// MUST be hyphenated ("en-US"): the underscore form ("en_US") is only for
+// the Inventory API's `locale` JSON field, and sending it as a header makes
+// some Sell endpoints fail with an opaque 500 + empty errors[] (observed on
+// createPaymentPolicy) while others happen to tolerate it.
+const HEADER_LANGUAGE = "en-US";
 const DEFAULT_MARKETPLACE = "EBAY_US";
 const DEFAULT_CURRENCY = "USD";
 /** Last-resort fallback when we can't infer a category. eBay's "Everything Else". */
@@ -62,8 +67,8 @@ async function ebayFetch<T = unknown>(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept: "application/json",
-      "Content-Language": DEFAULT_LOCALE,
-      "Accept-Language": DEFAULT_LOCALE,
+      "Content-Language": HEADER_LANGUAGE,
+      "Accept-Language": HEADER_LANGUAGE,
       ...(rest.headers ?? {}),
     },
   });
