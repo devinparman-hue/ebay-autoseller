@@ -2,6 +2,7 @@ import Link from "next/link";
 import { isEbayLinked, getStoredTokens } from "@/lib/ebay";
 import EbayManualTokenForm from "./EbayManualTokenForm";
 import EbayCodeForm from "./EbayCodeForm";
+import ListingDefaultsForm from "./ListingDefaultsForm";
 
 /**
  * eBay account settings. Two ways to link:
@@ -145,7 +146,7 @@ export default async function EbaySettingsPage({
         <p className="mt-1 text-xs text-zinc-500">
           Use eBay&apos;s developer-portal{" "}
           <a
-            href="https://developer.ebay.com/my/auth?env=sandbox&index=0"
+            href="https://developer.ebay.com/my/auth?env=production&index=0"
             className="underline"
             target="_blank"
             rel="noopener noreferrer"
@@ -156,6 +157,19 @@ export default async function EbaySettingsPage({
           We&apos;ll validate them with a test API call before saving.
         </p>
         <EbayManualTokenForm />
+      </section>
+
+      {/* Listing defaults — lives here because eBay's own policy UI errors
+          for this account; the API is the only reliable editor. */}
+      <section className="mt-8">
+        <h2 className="text-sm font-medium">
+          Listing defaults — shipping &amp; returns
+        </h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Shared by every listing the app posts. Changes also update live
+          listings that use these policies.
+        </p>
+        <ListingDefaultsForm />
       </section>
     </main>
   );

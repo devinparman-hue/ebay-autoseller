@@ -326,6 +326,157 @@ async function ensureReturnPolicy(): Promise<string> {
   return created.returnPolicyId;
 }
 
+/* ------------------------ Listing defaults (edit) ----------------------- */
+
+/**
+ * In-app editing of the shared shipping/return policies. Exists because
+ * eBay's own business-policy web UI persistently errors for this account
+ * ("Sorry, something went wrong" / Akamai failures) while the Account API
+ * works fine — so the app is the only reliable way to change these.
+ *
+ * Edits apply to every listing the app posts AND to live listings that
+ * reference the policies (eBay propagates policy changes).
+ */
+
+interface FulfillmentPolicyDetail {
+  fulfillmentPolicyId: string;
+  name: string;
+  handlingTime?: { value: number; unit: string };
+  shippingOptions?: Array<{
+    optionType: string;
+    costType: string;
+    shippingServices?: Array<{
+      shippingServiceCode?: string;
+      freeShipping?: boolean;
+      shippingCost?: { value: string; currency: string };
+    }>;
+  }>;
+}
+
+interface ReturnPolicyDetail {
+  returnPolicyId: string;
+  name: string;
+  returnsAccepted?: boolean;
+  returnPeriod?: { value: number; unit: string };
+}
+
+export interface ListingDefaults {
+  fulfillmentPolicyId: string;
+  fulfillmentPolicyName: string;
+  returnPolicyId: string;
+  returnPolicyName: string;
+  shippingCostUsd: number;
+  freeShipping: boolean;
+  shippingServiceCode: string;
+  handlingTimeDays: number;
+  returnsAccepted: boolean;
+  returnPeriodDays: number;
+}
+
+/** Read the current shared policies as a flat editable settings object. */
+export async function getListingDefaults(): Promise<ListingDefaults> {
+  const [f, r] = await Promise.all([
+    ebayFetch<{ fulfillmentPolicies?: FulfillmentPolicyDetail[] }>(
+      `/sell/account/v1/fulfillment_policy?${POLICY_QUERY}`
+    ),
+    ebayFetch<{ returnPolicies?: ReturnPolicyDetail[] }>(
+      `/sell/account/v1/return_policy?${POLICY_QUERY}`
+    ),
+  ]);
+  const fp = f.fulfillmentPolicies?.[0];
+  const rp = r.returnPolicies?.[0];
+  if (!fp || !rp) {
+    throw new Error(
+      "No policies on the account yet — they're created on your first post. " +
+        "Post one listing, then edit defaults here."
+    );
+  }
+  const svc = fp.shippingOptions?.[0]?.shippingServices?.[0];
+  return {
+    fulfillmentPolicyId: fp.fulfillmentPolicyId,
+    fulfillmentPolicyName: fp.name,
+    returnPolicyId: rp.returnPolicyId,
+    returnPolicyName: rp.name,
+    shippingCostUsd: svc?.shippingCost ? Number(svc.shippingCost.value) : 0,
+    freeShipping: svc?.freeShipping ?? false,
+    shippingServiceCode: svc?.shippingServiceCode ?? "ShippingMethodStandard",
+    handlingTimeDays: fp.handlingTime?.value ?? 3,
+    returnsAccepted: rp.returnsAccepted ?? true,
+    returnPeriodDays: rp.returnPeriod?.value ?? 30,
+  };
+}
+
+export interface ListingDefaultsUpdate {
+  shippingCostUsd: number;
+  freeShipping: boolean;
+  handlingTimeDays: number;
+  returnsAccepted: boolean;
+  returnPeriodDays: number;
+}
+
+/**
+ * Rewrite both policies with the given settings. We rebuild the bodies
+ * from scratch (same shapes we create them with) rather than round-tripping
+ * eBay's response object — avoids echoing read-only fields back at a PUT
+ * endpoint that might reject them.
+ */
+export async function updateListingDefaults(
+  input: ListingDefaultsUpdate
+): Promise<void> {
+  const current = await getListingDefaults();
+
+  const shippingService: Record<string, unknown> = {
+    sortOrder: 1,
+    shippingServiceCode: current.shippingServiceCode,
+    freeShipping: input.freeShipping,
+    buyerResponsibleForShipping: false,
+    buyerResponsibleForPickup: false,
+  };
+  if (!input.freeShipping) {
+    shippingService.shippingCost = {
+      value: input.shippingCostUsd.toFixed(2),
+      currency: DEFAULT_CURRENCY,
+    };
+  }
+  await ebayFetch(
+    `/sell/account/v1/fulfillment_policy/${current.fulfillmentPolicyId}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name: current.fulfillmentPolicyName,
+        marketplaceId: DEFAULT_MARKETPLACE,
+        categoryTypes: DEFAULT_CATEGORY_TYPES,
+        handlingTime: { value: input.handlingTimeDays, unit: "DAY" },
+        shippingOptions: [
+          {
+            optionType: "DOMESTIC",
+            costType: "FLAT_RATE",
+            shippingServices: [shippingService],
+          },
+        ],
+      }),
+      skipBody: true,
+    }
+  );
+
+  const returnBody: Record<string, unknown> = {
+    name: current.returnPolicyName,
+    marketplaceId: DEFAULT_MARKETPLACE,
+    categoryTypes: DEFAULT_CATEGORY_TYPES,
+    returnsAccepted: input.returnsAccepted,
+  };
+  if (input.returnsAccepted) {
+    returnBody.returnPeriod = { value: input.returnPeriodDays, unit: "DAY" };
+    returnBody.returnShippingCostPayer = "BUYER";
+    returnBody.returnMethod = "MONEY_BACK";
+  }
+  await ebayFetch(`/sell/account/v1/return_policy/${current.returnPolicyId}`, {
+    method: "PUT",
+    body: JSON.stringify(returnBody),
+    skipBody: true,
+  });
+}
+
 /* -------------------------- Inventory location -------------------------- */
 
 interface LocationResponse {
