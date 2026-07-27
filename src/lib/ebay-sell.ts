@@ -36,13 +36,25 @@ const DEFAULT_CURRENCY = "USD";
 /** Last-resort fallback when we can't infer a category. eBay's "Everything Else". */
 const FALLBACK_CATEGORY_ID = "99";
 
-/** Map our internal condition grades to eBay's. */
+/**
+ * Map our internal condition grades to eBay's Inventory API enums.
+ *
+ * Trap: the graded enums (USED_GOOD=5000, USED_ACCEPTABLE=6000, and
+ * LIKE_NEW=2750) are only valid in categories with graded conditions
+ * (books/movies/music). Everything else — including all the household
+ * stuff this app lists — only accepts the generic "Used" condition (3000),
+ * whose API enum is confusingly named USED_EXCELLENT. Publishing with a
+ * graded enum in a normal category fails with errorId 25021 ("condition id
+ * is invalid for the selected primary category"). The nuance we lose here
+ * is carried in conditionDescription instead, which is how most sellers
+ * express it anyway.
+ */
 const CONDITION_MAP: Record<ConditionGrade, string> = {
-  new: "NEW",
-  like_new: "LIKE_NEW",
-  used_good: "USED_GOOD",
-  used_acceptable: "USED_ACCEPTABLE",
-  for_parts: "FOR_PARTS_OR_NOT_WORKING",
+  new: "NEW", // 1000
+  like_new: "NEW_OTHER", // 1500 "New other (see details)" — 2750 LIKE_NEW is media-only
+  used_good: "USED_EXCELLENT", // 3000 — the universal "Used"
+  used_acceptable: "USED_EXCELLENT", // 3000; nuance lives in conditionDescription
+  for_parts: "FOR_PARTS_OR_NOT_WORKING", // 7000
 };
 
 /* ----------------------------- HTTP wrapper ----------------------------- */
@@ -495,7 +507,20 @@ interface CreateOfferResponse {
   offerId: string;
 }
 
-export async function createOffer(args: {
+interface OfferListResponse {
+  offers?: Array<{ offerId: string }>;
+  total?: number;
+}
+
+/**
+ * Create the offer for a SKU — or, if one already exists (a previous post
+ * attempt that failed at publish leaves an unpublished offer behind),
+ * update it in place with the current fields. Makes the whole post flow
+ * safely retryable: price/category/description edits between attempts are
+ * carried onto the existing offer instead of erroring with "offer entity
+ * already exists".
+ */
+export async function ensureOffer(args: {
   sku: string;
   categoryId: string;
   description: string;
@@ -503,33 +528,53 @@ export async function createOffer(args: {
   policies: PolicyIds;
   locationKey: string;
 }): Promise<string> {
-  const result = await ebayFetch<CreateOfferResponse>(
-    "/sell/inventory/v1/offer",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        sku: args.sku,
-        marketplaceId: DEFAULT_MARKETPLACE,
-        format: "FIXED_PRICE",
-        availableQuantity: 1,
-        categoryId: args.categoryId,
-        listingDescription: args.description,
-        listingPolicies: {
-          fulfillmentPolicyId: args.policies.fulfillmentPolicyId,
-          paymentPolicyId: args.policies.paymentPolicyId,
-          returnPolicyId: args.policies.returnPolicyId,
-        },
-        merchantLocationKey: args.locationKey,
-        pricingSummary: {
-          price: {
-            value: args.price.toFixed(2),
-            currency: DEFAULT_CURRENCY,
-          },
-        },
-      }),
+  const offerBody = {
+    sku: args.sku,
+    marketplaceId: DEFAULT_MARKETPLACE,
+    format: "FIXED_PRICE",
+    availableQuantity: 1,
+    categoryId: args.categoryId,
+    listingDescription: args.description,
+    listingPolicies: {
+      fulfillmentPolicyId: args.policies.fulfillmentPolicyId,
+      paymentPolicyId: args.policies.paymentPolicyId,
+      returnPolicyId: args.policies.returnPolicyId,
+    },
+    merchantLocationKey: args.locationKey,
+    pricingSummary: {
+      price: {
+        value: args.price.toFixed(2),
+        currency: DEFAULT_CURRENCY,
+      },
+    },
+  };
+
+  // getOffers 404s when the SKU has no offers — treat that as "none".
+  const existing = await ebayFetch<OfferListResponse>(
+    `/sell/inventory/v1/offer?sku=${encodeURIComponent(args.sku)}` +
+      `&marketplace_id=${DEFAULT_MARKETPLACE}`
+  ).catch((err) => {
+    if (err instanceof EbayApiError && err.status === 404) {
+      return {} as OfferListResponse;
     }
+    throw err;
+  });
+
+  const existingId = existing.offers?.[0]?.offerId;
+  if (existingId) {
+    await ebayFetch(`/sell/inventory/v1/offer/${existingId}`, {
+      method: "PUT",
+      body: JSON.stringify(offerBody),
+      skipBody: true,
+    });
+    return existingId;
+  }
+
+  const created = await ebayFetch<CreateOfferResponse>(
+    "/sell/inventory/v1/offer",
+    { method: "POST", body: JSON.stringify(offerBody) }
   );
-  return result.offerId;
+  return created.offerId;
 }
 
 interface PublishOfferResponse {
@@ -577,7 +622,7 @@ export async function postToEbay(listing: Listing): Promise<PostResult> {
 
   const sku = listing.id;
   await putInventoryItem(sku, listing);
-  const offerId = await createOffer({
+  const offerId = await ensureOffer({
     sku,
     categoryId,
     description: listing.description,
