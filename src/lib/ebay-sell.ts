@@ -447,6 +447,13 @@ export async function updateListingDefaults(
         marketplaceId: DEFAULT_MARKETPLACE,
         categoryTypes: DEFAULT_CATEGORY_TYPES,
         handlingTime: { value: input.handlingTimeDays, unit: "DAY" },
+        // The update endpoint is stricter than create: it 400s with
+        // "Global shipping field is null" (etc.) if these aren't sent
+        // explicitly, even though create happily defaults them all.
+        globalShipping: false,
+        pickupDropOff: false,
+        freightShipping: false,
+        localPickup: false,
         shippingOptions: [
           {
             optionType: "DOMESTIC",
