@@ -33,7 +33,12 @@ const DEFAULT_LOCATION_KEY = "default";
 const HEADER_LANGUAGE = "en-US";
 const DEFAULT_MARKETPLACE = "EBAY_US";
 const DEFAULT_CURRENCY = "USD";
-/** Last-resort fallback when we can't infer a category. eBay's "Everything Else". */
+/**
+ * Seed for the catch-all fallback: eBay's "Everything Else" ROOT category.
+ * Not itself publishable (it's a parent, not a leaf — publishing into it
+ * fails with errorId 25005); ensureLeafCategory() descends from it to its
+ * "Other" leaf child.
+ */
 const FALLBACK_CATEGORY_ID = "99";
 
 /**
@@ -590,26 +595,106 @@ interface CategorySuggestionsResponse {
   }>;
 }
 
+interface SubtreeNode {
+  category: { categoryId: string; categoryName: string };
+  leafCategoryTreeNode?: boolean;
+  childCategoryTreeNodes?: SubtreeNode[];
+}
+
+interface SubtreeResponse {
+  categorySubtreeNode?: SubtreeNode;
+}
+
+/** The default category tree never changes for a marketplace — cache it. */
+let cachedTreeId: string | null = null;
+async function getCategoryTreeId(): Promise<string> {
+  if (cachedTreeId) return cachedTreeId;
+  const tree = await ebayFetch<DefaultTreeResponse>(
+    `/commerce/taxonomy/v1/get_default_category_tree_id?marketplace_id=${DEFAULT_MARKETPLACE}`
+  );
+  cachedTreeId = tree.categoryTreeId;
+  return cachedTreeId;
+}
+
 /**
- * Ask eBay what category best fits a given title. Falls back to category
- * 99 ("Everything Else > Other") if the taxonomy call fails or returns
- * nothing — better to publish to a generic category than to fail the
- * whole post over classification.
+ * eBay only allows publishing into LEAF categories (errorId 25005
+ * otherwise) — and neither category suggestions nor our fallback are
+ * guaranteed to be leaves. Verify via the subtree endpoint, and when the
+ * node has children, walk down to the shallowest leaf, preferring a child
+ * named "Other" (eBay's catch-all convention) at each level.
+ */
+async function ensureLeafCategory(
+  treeId: string,
+  categoryId: string
+): Promise<string> {
+  const res = await ebayFetch<SubtreeResponse>(
+    `/commerce/taxonomy/v1/category_tree/${treeId}` +
+      `/get_category_subtree?category_id=${encodeURIComponent(categoryId)}`
+  );
+  const root = res.categorySubtreeNode;
+  if (!root) return categoryId;
+  const queue: SubtreeNode[] = [root];
+  let steps = 0;
+  while (queue.length > 0 && steps++ < 500) {
+    const node = queue.shift()!;
+    const kids = node.childCategoryTreeNodes ?? [];
+    if (node.leafCategoryTreeNode === true || kids.length === 0) {
+      return node.category.categoryId;
+    }
+    kids.sort(
+      (a, b) =>
+        Number(b.category.categoryName === "Other") -
+        Number(a.category.categoryName === "Other")
+    );
+    queue.push(...kids);
+  }
+  return categoryId;
+}
+
+/**
+ * Ask eBay what category best fits a given title, guaranteeing a leaf.
+ * If the full title matches nothing, retry with a shortened query (AI
+ * titles are long and spec-heavy, which can stump the matcher); if that
+ * fails too, descend from "Everything Else" to its catch-all leaf. Throws
+ * only when the taxonomy API itself is unreachable — publishing without a
+ * valid leaf would fail anyway, so a clear message beats a cryptic 25005.
  */
 export async function getSuggestedCategoryId(title: string): Promise<string> {
+  let treeId: string;
   try {
-    const tree = await ebayFetch<DefaultTreeResponse>(
-      `/commerce/taxonomy/v1/get_default_category_tree_id?marketplace_id=${DEFAULT_MARKETPLACE}`
-    );
-    const suggestions = await ebayFetch<CategorySuggestionsResponse>(
-      `/commerce/taxonomy/v1/category_tree/${tree.categoryTreeId}` +
-        `/get_category_suggestions?q=${encodeURIComponent(title)}`
-    );
-    const first = suggestions.categorySuggestions?.[0]?.category?.categoryId;
-    return first ?? FALLBACK_CATEGORY_ID;
+    treeId = await getCategoryTreeId();
   } catch (err) {
-    console.warn("Category suggestion failed, falling back to 99", err);
-    return FALLBACK_CATEGORY_ID;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Couldn't reach eBay's category service to classify this item — try again. (${message})`
+    );
+  }
+
+  // Suggestion lookups 404 when nothing matches; treat that as "no answer".
+  const suggest = async (q: string): Promise<string | undefined> => {
+    try {
+      const s = await ebayFetch<CategorySuggestionsResponse>(
+        `/commerce/taxonomy/v1/category_tree/${treeId}` +
+          `/get_category_suggestions?q=${encodeURIComponent(q)}`
+      );
+      return s.categorySuggestions?.[0]?.category?.categoryId;
+    } catch {
+      return undefined;
+    }
+  };
+
+  let candidate = await suggest(title);
+  if (!candidate) {
+    const short = title.split(/\s+/).slice(0, 4).join(" ");
+    if (short && short !== title) candidate = await suggest(short);
+  }
+  candidate ??= FALLBACK_CATEGORY_ID;
+
+  try {
+    return await ensureLeafCategory(treeId, candidate);
+  } catch {
+    // Subtree lookup hiccuped — best effort with the raw candidate.
+    return candidate;
   }
 }
 
