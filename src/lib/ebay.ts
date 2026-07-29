@@ -210,6 +210,54 @@ function basicAuth(): string {
   return `Basic ${Buffer.from(raw, "utf8").toString("base64")}`;
 }
 
+/* ------------------------- Application token ---------------------------- */
+
+/**
+ * Application access token (client_credentials grant). Covers eBay's
+ * public-metadata APIs — Taxonomy in particular — that don't act on the
+ * user's behalf. Using it there lets the USER token keep its minimal
+ * sell.inventory/sell.account scopes: the long-term OAuth link doesn't
+ * include the base api_scope, so taxonomy calls with the user token 403.
+ *
+ * Cached per lambda instance; app tokens last ~2h and cost nothing to
+ * re-mint, so a 60s-early refresh is plenty.
+ */
+let _appToken: { token: string; expiresAtMs: number } | null = null;
+
+export async function getAppAccessToken(): Promise<string> {
+  if (_appToken && _appToken.expiresAtMs - Date.now() > 60_000) {
+    return _appToken.token;
+  }
+  const cfg = getEbayConfig();
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    scope: "https://api.ebay.com/oauth/api_scope",
+  });
+  const res = await fetch(`${cfg.apiHost}/identity/v1/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Authorization: basicAuth(),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(
+      `eBay app token failed (${res.status}): ${text.slice(0, 300)}`
+    );
+  }
+  const json = (await res.json()) as {
+    access_token: string;
+    expires_in: number;
+  };
+  _appToken = {
+    token: json.access_token,
+    expiresAtMs: Date.now() + json.expires_in * 1000,
+  };
+  return _appToken.token;
+}
+
 /**
  * Exchange the `code` from the OAuth callback for a full token pair.
  * Called exactly once per link — from /api/ebay/callback.

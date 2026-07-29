@@ -1,5 +1,9 @@
 import "server-only";
-import { getEbayConfig, getValidAccessToken } from "./ebay";
+import {
+  getAppAccessToken,
+  getEbayConfig,
+  getValidAccessToken,
+} from "./ebay";
 import type { ConditionGrade, Listing } from "./types";
 
 /**
@@ -73,11 +77,14 @@ const CONDITION_MAP: Record<ConditionGrade, string> = {
  */
 async function ebayFetch<T = unknown>(
   path: string,
-  init: RequestInit & { skipBody?: boolean } = {}
+  init: RequestInit & { skipBody?: boolean; auth?: "user" | "app" } = {}
 ): Promise<T> {
   const cfg = getEbayConfig();
-  const token = await getValidAccessToken();
-  const { skipBody, ...rest } = init;
+  const { skipBody, auth, ...rest } = init;
+  // "app" = client-credentials token for public-metadata APIs (Taxonomy);
+  // default "user" token for anything acting on the seller's account.
+  const token =
+    auth === "app" ? await getAppAccessToken() : await getValidAccessToken();
   const res = await fetch(`${cfg.apiHost}${path}`, {
     ...rest,
     headers: {
@@ -610,7 +617,8 @@ let cachedTreeId: string | null = null;
 async function getCategoryTreeId(): Promise<string> {
   if (cachedTreeId) return cachedTreeId;
   const tree = await ebayFetch<DefaultTreeResponse>(
-    `/commerce/taxonomy/v1/get_default_category_tree_id?marketplace_id=${DEFAULT_MARKETPLACE}`
+    `/commerce/taxonomy/v1/get_default_category_tree_id?marketplace_id=${DEFAULT_MARKETPLACE}`,
+    { auth: "app" }
   );
   cachedTreeId = tree.categoryTreeId;
   return cachedTreeId;
@@ -629,7 +637,8 @@ async function ensureLeafCategory(
 ): Promise<string> {
   const res = await ebayFetch<SubtreeResponse>(
     `/commerce/taxonomy/v1/category_tree/${treeId}` +
-      `/get_category_subtree?category_id=${encodeURIComponent(categoryId)}`
+      `/get_category_subtree?category_id=${encodeURIComponent(categoryId)}`,
+    { auth: "app" }
   );
   const root = res.categorySubtreeNode;
   if (!root) return categoryId;
@@ -675,7 +684,8 @@ export async function getSuggestedCategoryId(title: string): Promise<string> {
     try {
       const s = await ebayFetch<CategorySuggestionsResponse>(
         `/commerce/taxonomy/v1/category_tree/${treeId}` +
-          `/get_category_suggestions?q=${encodeURIComponent(q)}`
+          `/get_category_suggestions?q=${encodeURIComponent(q)}`,
+        { auth: "app" }
       );
       return s.categorySuggestions?.[0]?.category?.categoryId;
     } catch {
