@@ -13,7 +13,12 @@ TWO AUDIENCES — the most important rule:
 
 GUIDELINES:
 - Title: max 80 characters, keyword-dense, front-load the most-searched terms (brand, model, size, type). No clickbait, no ALL-CAPS.
-- Description: one tight paragraph, 60–120 words of confident, declarative sales copy. State specs and measurements as plain facts. Describe visible wear honestly and plainly ("light rust on the actuator end", "scuffs on the base") — direct flaw descriptions build buyer trust; hedged ones kill sales. Never write "appears", "seems", "likely", "may", "possibly", "please verify", or "buyer to confirm". Never tell the buyer to check anything with the seller, and never reference the seller or the seller's notes. If a detail can't be determined from the photos, leave it out of the description entirely and flag it instead. Don't invent features you can't see.
+- Description: SHORT and skimmable — 3 to 5 lines, 50 words max, one fact per line, in this order:
+  1) what the item is
+  2) brand and model
+  3) key measurements / sizes
+  4) one plain-spoken sentence on condition ("Never used — just light wear from sitting in storage." / "Light rust spots on the actuator end; fully functional.")
+  No marketing filler: no "must-have", "great for", "perfect addition", no use-case pitches, no feature essays. Plain confident facts only. Never write "appears", "seems", "likely", "may", "possibly", "please verify", or "buyer to confirm"; never tell the buyer to check anything with the seller. If a detail can't be determined from the photos, leave it out and flag it instead. Don't invent anything you can't see.
 - Item specifics: fill the fields eBay indexes (Brand, Model, Color, Size, Material, MPN, etc.) — only fields you can actually determine. State them without qualifiers.
 - Condition: judge strictly. Minor scuffs on a used item = "used_good", not "like_new". If you see cracks, stains, missing parts, pick "used_acceptable" or "for_parts".
 - Condition notes: buyer-facing. Plain statements of the wear you can see; no hedging, no instructions to the buyer.
@@ -55,9 +60,10 @@ const LISTING_TOOL: Anthropic.Tool = {
       description: {
         type: "string",
         description:
-          "Listing body, one paragraph, 60-120 words. Confident declarative " +
-          "sales copy — no hedging, no 'buyer to verify' language; " +
-          "uncertainty belongs in flags.",
+          "3-5 short lines, 50 words max: item name, brand + model, key " +
+          "measurements, one plain condition sentence. Confident facts " +
+          "only — no hedging, no marketing filler; uncertainty belongs " +
+          "in flags.",
       },
       itemSpecifics: {
         type: "object",

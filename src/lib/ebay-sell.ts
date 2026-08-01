@@ -66,6 +66,15 @@ const CONDITION_MAP: Record<ConditionGrade, string> = {
   for_parts: "FOR_PARTS_OR_NOT_WORKING", // 7000
 };
 
+/**
+ * eBay renders listing descriptions as HTML, so plain newlines collapse.
+ * Our AI drafts are now line-based (name / brand / measurements /
+ * condition) — convert breaks so they survive on the live listing.
+ */
+function toHtmlDescription(text: string): string {
+  return text.replace(/\r?\n/g, "<br>");
+}
+
 /* ----------------------------- HTTP wrapper ----------------------------- */
 
 /**
@@ -729,7 +738,7 @@ export async function putInventoryItem(
     body: JSON.stringify({
       product: {
         title: listing.title.slice(0, 80), // eBay max title length
-        description: listing.description,
+        description: toHtmlDescription(listing.description),
         imageUrls: listing.photos,
         aspects,
       },
@@ -787,7 +796,7 @@ export async function ensureOffer(args: {
     format: "FIXED_PRICE",
     availableQuantity: 1,
     categoryId: args.categoryId,
-    listingDescription: args.description,
+    listingDescription: toHtmlDescription(args.description),
     listingPolicies: {
       fulfillmentPolicyId: args.policies.fulfillmentPolicyId,
       paymentPolicyId: args.policies.paymentPolicyId,
