@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/markdown",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/sync/ebay",
+      "schedule": "30 15 * * *"
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   getEbayConfig,
   getValidAccessToken,
 } from "./ebay";
+import { listListings, updateListing } from "./storage";
 import type { ConditionGrade, Listing } from "./types";
 
 /**
@@ -770,7 +771,15 @@ interface CreateOfferResponse {
 }
 
 interface OfferListResponse {
-  offers?: Array<{ offerId: string }>;
+  offers?: Array<{
+    offerId: string;
+    status?: string;
+    listing?: {
+      listingId?: string;
+      listingStatus?: string;
+      soldQuantity?: number;
+    };
+  }>;
   total?: number;
 }
 
@@ -900,4 +909,74 @@ export async function postToEbay(listing: Listing): Promise<PostResult> {
     sku,
     postedAt: new Date().toISOString(),
   };
+}
+
+/* --------------------------- Sold-status sync --------------------------- */
+
+export interface SoldSyncChange {
+  listingId: string;
+  title: string;
+  outcome: "sold" | "unsold";
+  salePrice?: number;
+}
+
+/**
+ * Pull each active listing's status from eBay and update our records:
+ * soldQuantity > 0 → "sold"; listing ENDED with nothing sold → "unsold".
+ *
+ * Uses the offer lookup (sell.inventory scope — no extra consent needed).
+ * That endpoint reports quantity sold but not the buyer's exact total, so
+ * salePrice is recorded as our listed price at sync time — exact for plain
+ * fixed-price sales, which is all we create. Wiring the Fulfillment API
+ * for order-level totals would need the sell.fulfillment scope and a
+ * re-consent; not worth it yet.
+ *
+ * Safe to run repeatedly: only touches listings still marked "active".
+ */
+export async function syncEbayStatuses(): Promise<SoldSyncChange[]> {
+  const all = await listListings();
+  const active = all.filter((l) => l.status === "active");
+  const changes: SoldSyncChange[] = [];
+
+  for (const l of active) {
+    let offers: OfferListResponse;
+    try {
+      offers = await ebayFetch<OfferListResponse>(
+        `/sell/inventory/v1/offer?sku=${encodeURIComponent(l.id)}` +
+          `&marketplace_id=${DEFAULT_MARKETPLACE}`
+      );
+    } catch (err) {
+      // 404 = no offers for this SKU (e.g. mock-posted rows from early
+      // testing) — nothing to sync, skip.
+      if (err instanceof EbayApiError && err.status === 404) continue;
+      throw err;
+    }
+    const offer = offers.offers?.[0];
+    const info = offer?.listing;
+    if (!info) continue;
+
+    const soldQty = info.soldQuantity ?? 0;
+    const ended =
+      info.listingStatus === "ENDED" || offer?.status === "ENDED";
+
+    if (soldQty > 0) {
+      const salePrice = l.salePrice ?? l.suggestedPrice;
+      await updateListing(l.id, {
+        status: "sold",
+        soldAt: new Date().toISOString(),
+        salePrice,
+      });
+      changes.push({
+        listingId: l.id,
+        title: l.title,
+        outcome: "sold",
+        salePrice,
+      });
+    } else if (ended) {
+      await updateListing(l.id, { status: "unsold" });
+      changes.push({ listingId: l.id, title: l.title, outcome: "unsold" });
+    }
+  }
+
+  return changes;
 }

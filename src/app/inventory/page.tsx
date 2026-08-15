@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listListings } from "@/lib/storage";
 import { daysUntilNextMarkdown } from "@/lib/markdown";
 import MarkdownButton from "@/components/MarkdownButton";
+import SyncEbayButton from "@/components/SyncEbayButton";
 import type { Listing, ListingStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -80,7 +81,12 @@ export default async function InventoryPage() {
         </div>
       )}
 
-      {byStatus.active.length > 0 && <MarkdownButton />}
+      {byStatus.active.length > 0 && (
+        <div className="flex items-start gap-3">
+          <SyncEbayButton />
+          <MarkdownButton />
+        </div>
+      )}
 
       <div className="mt-6 space-y-6">
         {STATUS_ORDER.map((status) => {
