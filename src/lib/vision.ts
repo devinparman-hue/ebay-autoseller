@@ -22,7 +22,7 @@ GUIDELINES:
 - Item specifics: fill the fields eBay indexes (Brand, Model, Color, Size, Material, MPN, etc.) — only fields you can actually determine. State them without qualifiers.
 - Condition: judge strictly. Minor scuffs on a used item = "used_good", not "like_new". If you see cracks, stains, missing parts, pick "used_acceptable" or "for_parts".
 - Condition notes: buyer-facing. Plain statements of the wear you can see; no hedging, no instructions to the buyer.
-- Weight and dimensions: estimate from item type + visible references. Err slightly high so shipping doesn't underquote.
+- Weight and dimensions: photos are numbered starting at 1 in the order given. If any photo shows the item ON A SCALE, read the scale's display and use that exact weight (convert lb/kg/g to ounces) — the scale beats your estimate every time. Add a flag naming that photo so the seller can remove it before posting (e.g. "photo 3 is the scale shot (2 lb 11 oz read = 43 oz) — delete it before posting"). Same idea for tape measures/rulers in frame: read them for dimensions and flag the photo. Otherwise estimate from item type + visible references, erring slightly high so shipping doesn't underquote.
 - Size bucket: based on your weight estimate (<1lb, 1-5lb, 5-20lb, 20+lb). For anything clearly too bulky/heavy to ship economically, use "pickup".
 - Shipping service: pick one based on size bucket — "USPS Ground Advantage" for <1lb, "USPS Priority Mail" for 1-10lb, "UPS Ground" for 10-50lb, "Local pickup" otherwise.
 - Suggested price: median of your mental model of recent sold comps for this exact item + condition. Be realistic, not optimistic.

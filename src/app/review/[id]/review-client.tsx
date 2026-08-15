@@ -25,6 +25,10 @@ export default function ReviewClient({
   >(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Serializes photo move/delete taps so they can't race PATCHes.
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  const isDraft = listing.status === "draft";
 
   async function save(patch: Partial<Listing>) {
     setError(null);
@@ -65,6 +69,30 @@ export default function ReviewClient({
     });
   }
 
+  async function movePhoto(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (photoBusy || j < 0 || j >= listing.photos.length) return;
+    const photos = [...listing.photos];
+    [photos[i], photos[j]] = [photos[j], photos[i]];
+    setPhotoBusy(true);
+    try {
+      await save({ photos });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function deletePhoto(i: number) {
+    if (photoBusy || listing.photos.length <= 1) return;
+    if (!confirm("Remove this photo from the listing?")) return;
+    setPhotoBusy(true);
+    try {
+      await save({ photos: listing.photos.filter((_, x) => x !== i) });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   function del() {
     if (!confirm("Delete this draft?")) return;
     startTransition(async () => {
@@ -95,8 +123,8 @@ export default function ReviewClient({
       <div className="mt-4 flex gap-2 overflow-x-auto -mx-4 px-4 snap-x snap-mandatory">
         {listing.photos.map((src, i) => (
           <div
-            key={i}
-            className="shrink-0 w-40 h-40 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 snap-center"
+            key={src}
+            className="relative shrink-0 w-40 h-40 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 snap-center"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -104,6 +132,42 @@ export default function ReviewClient({
               alt={`photo ${i + 1}`}
               className="w-full h-full object-cover"
             />
+            <span className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-white">
+              {i === 0 ? "Cover" : i + 1}
+            </span>
+            {isDraft && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => deletePhoto(i)}
+                  disabled={photoBusy || listing.photos.length <= 1}
+                  aria-label={`Remove photo ${i + 1}`}
+                  className="absolute top-1 right-1 h-7 w-7 rounded-full bg-black/70 text-white text-sm leading-none disabled:opacity-30"
+                >
+                  ✕
+                </button>
+                <div className="absolute bottom-1 inset-x-1 flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => movePhoto(i, -1)}
+                    disabled={photoBusy || i === 0}
+                    aria-label={`Move photo ${i + 1} left`}
+                    className="h-7 w-7 rounded-full bg-black/70 text-white text-sm leading-none disabled:opacity-30"
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => movePhoto(i, 1)}
+                    disabled={photoBusy || i === listing.photos.length - 1}
+                    aria-label={`Move photo ${i + 1} right`}
+                    className="h-7 w-7 rounded-full bg-black/70 text-white text-sm leading-none disabled:opacity-30"
+                  >
+                    ▶
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ))}
       </div>
