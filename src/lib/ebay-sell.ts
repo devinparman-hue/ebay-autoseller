@@ -770,7 +770,7 @@ interface CreateOfferResponse {
   offerId: string;
 }
 
-interface OfferListResponse {
+export interface OfferListResponse {
   offers?: Array<{
     offerId: string;
     status?: string;
@@ -781,6 +781,16 @@ interface OfferListResponse {
     };
   }>;
   total?: number;
+}
+
+/** Raw offer lookup by SKU — shared by the sold-sync and debug routes. */
+export async function getOffersForSku(
+  sku: string
+): Promise<OfferListResponse> {
+  return ebayFetch<OfferListResponse>(
+    `/sell/inventory/v1/offer?sku=${encodeURIComponent(sku)}` +
+      `&marketplace_id=${DEFAULT_MARKETPLACE}`
+  );
 }
 
 /**
@@ -941,10 +951,7 @@ export async function syncEbayStatuses(): Promise<SoldSyncChange[]> {
   for (const l of active) {
     let offers: OfferListResponse;
     try {
-      offers = await ebayFetch<OfferListResponse>(
-        `/sell/inventory/v1/offer?sku=${encodeURIComponent(l.id)}` +
-          `&marketplace_id=${DEFAULT_MARKETPLACE}`
-      );
+      offers = await getOffersForSku(l.id);
     } catch (err) {
       // 404 = no offers for this SKU (e.g. mock-posted rows from early
       // testing) — nothing to sync, skip.
