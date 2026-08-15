@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { exchangeCodeForTokens, saveTokens } from "@/lib/ebay";
+import { getSupabase } from "@/lib/supabase";
 
 /**
  * Manual authorization-code exchange.
@@ -87,6 +88,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Preflight the database BEFORE spending the single-use code. Supabase's
+  // free tier auto-pauses when idle, and burning the code only to fail at
+  // saveTokens forces the user to redo the whole eBay sign-in. Fail early
+  // with the code still unused instead.
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase
+      .from("ebay_tokens")
+      .select("id")
+      .limit(1);
+    if (error) throw new Error(error.message);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        error: "database_unreachable",
+        detail:
+          "The app's database is unreachable (Supabase is likely paused). " +
+          "Restore it at supabase.com/dashboard, wait until it shows " +
+          "Active, then click Complete link again — this SAME URL is " +
+          "still valid; your code was NOT used.",
+        raw: message.slice(0, 200),
+      },
+      { status: 503 }
+    );
+  }
+
   let tokens;
   try {
     tokens = await exchangeCodeForTokens(code);
@@ -108,8 +136,9 @@ export async function POST(req: NextRequest) {
     await saveTokens(tokens);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    // Truncate: Supabase failures can carry entire HTML error pages.
     return NextResponse.json(
-      { error: "save_failed", detail: message },
+      { error: "save_failed", detail: message.slice(0, 300) },
       { status: 500 }
     );
   }
