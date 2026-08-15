@@ -45,6 +45,10 @@ export interface Listing extends Draft {
   status: ListingStatus;
   photos: string[];
   createdAt: string;
+  /** Identical units for sale — one eBay listing sells up to this many. */
+  quantity: number;
+  /** Units eBay reports sold so far; updated by the sold-status sync. */
+  soldQuantity?: number;
   postedAt?: string;
   soldAt?: string;
   salePrice?: number;

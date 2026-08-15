@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       status: "draft",
       photos: photoUrls,
       createdAt: now,
+      quantity: 1, // user bumps this on the review screen for multi-unit lots
       priceHistory: [{ price: draft.suggestedPrice, at: now }],
       ...draft,
     };

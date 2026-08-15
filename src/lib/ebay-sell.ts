@@ -747,7 +747,7 @@ export async function putInventoryItem(
       conditionDescription:
         listing.conditionNotes?.slice(0, 1000) || undefined,
       availability: {
-        shipToLocationAvailability: { quantity: 1 },
+        shipToLocationAvailability: { quantity: listing.quantity ?? 1 },
       },
       packageWeightAndSize: {
         weight: {
@@ -806,6 +806,7 @@ export async function ensureOffer(args: {
   categoryId: string;
   description: string;
   price: number;
+  quantity: number;
   policies: PolicyIds;
   locationKey: string;
 }): Promise<string> {
@@ -813,7 +814,7 @@ export async function ensureOffer(args: {
     sku: args.sku,
     marketplaceId: DEFAULT_MARKETPLACE,
     format: "FIXED_PRICE",
-    availableQuantity: 1,
+    availableQuantity: args.quantity,
     categoryId: args.categoryId,
     listingDescription: toHtmlDescription(args.description),
     listingPolicies: {
@@ -908,6 +909,7 @@ export async function postToEbay(listing: Listing): Promise<PostResult> {
     categoryId,
     description: listing.description,
     price: listing.suggestedPrice,
+    quantity: listing.quantity ?? 1,
     policies,
     locationKey,
   });
@@ -926,8 +928,10 @@ export async function postToEbay(listing: Listing): Promise<PostResult> {
 export interface SoldSyncChange {
   listingId: string;
   title: string;
-  outcome: "sold" | "unsold";
+  outcome: "sold" | "unsold" | "partial";
   salePrice?: number;
+  soldQuantity?: number;
+  quantity?: number;
 }
 
 /**
@@ -963,22 +967,39 @@ export async function syncEbayStatuses(): Promise<SoldSyncChange[]> {
     if (!info) continue;
 
     const soldQty = info.soldQuantity ?? 0;
+    const listedQty = l.quantity ?? 1;
     const ended =
       info.listingStatus === "ENDED" || offer?.status === "ENDED";
 
-    if (soldQty > 0) {
+    if (soldQty >= listedQty && soldQty > 0) {
+      // Every unit gone — the listing is done.
       const salePrice = l.salePrice ?? l.suggestedPrice;
       await updateListing(l.id, {
         status: "sold",
         soldAt: new Date().toISOString(),
         salePrice,
+        soldQuantity: soldQty,
       });
       changes.push({
         listingId: l.id,
         title: l.title,
         outcome: "sold",
         salePrice,
+        soldQuantity: soldQty,
+        quantity: listedQty,
       });
+    } else if (soldQty > 0) {
+      // Some units sold, listing still live — record progress.
+      if (soldQty !== (l.soldQuantity ?? 0)) {
+        await updateListing(l.id, { soldQuantity: soldQty });
+        changes.push({
+          listingId: l.id,
+          title: l.title,
+          outcome: "partial",
+          soldQuantity: soldQty,
+          quantity: listedQty,
+        });
+      }
     } else if (ended) {
       await updateListing(l.id, { status: "unsold" });
       changes.push({ listingId: l.id, title: l.title, outcome: "unsold" });

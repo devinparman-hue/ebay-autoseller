@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 interface Change {
   listingId: string;
   title: string;
-  outcome: "sold" | "unsold";
+  outcome: "sold" | "unsold" | "partial";
   salePrice?: number;
+  soldQuantity?: number;
+  quantity?: number;
 }
 
 /**
@@ -66,8 +68,12 @@ export default function SyncEbayButton() {
                   {c.title.slice(0, 40)}
                   {c.title.length > 40 ? "…" : ""} ·{" "}
                   {c.outcome === "sold"
-                    ? `SOLD${c.salePrice ? ` $${c.salePrice.toFixed(2)}` : ""} 🎉`
-                    : "ended without selling"}
+                    ? `SOLD${c.salePrice ? ` $${c.salePrice.toFixed(2)}` : ""}${
+                        (c.quantity ?? 1) > 1 ? ` ×${c.soldQuantity}` : ""
+                      } 🎉`
+                    : c.outcome === "partial"
+                      ? `${c.soldQuantity} of ${c.quantity} sold — still live`
+                      : "ended without selling"}
                 </li>
               ))}
             </ul>

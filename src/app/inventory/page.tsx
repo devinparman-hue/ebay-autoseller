@@ -34,7 +34,12 @@ export default async function InventoryPage() {
 
   const soldListings = byStatus.sold;
   const totalSales = soldListings.reduce(
-    (acc, l) => acc + (l.salePrice ?? l.suggestedPrice),
+    (acc, l) =>
+      acc +
+      (l.salePrice ?? l.suggestedPrice) *
+        // Multi-quantity: revenue = per-unit price × units sold. Falls back
+        // to 1 for rows from before quantity support.
+        (l.soldQuantity && l.soldQuantity > 0 ? l.soldQuantity : 1),
     0
   );
   const estFees = totalSales * 0.13;
@@ -145,7 +150,16 @@ function ListingRow({ listing }: { listing: Listing }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium truncate">{listing.title}</p>
+        <p className="text-sm font-medium truncate">
+          {listing.title}
+          {(listing.quantity ?? 1) > 1 ? ` ×${listing.quantity}` : ""}
+        </p>
+        {listing.status === "active" &&
+          (listing.soldQuantity ?? 0) > 0 && (
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5">
+              {listing.soldQuantity} of {listing.quantity} sold
+            </p>
+          )}
         <p className="text-xs text-zinc-500 mt-0.5">
           {markedDown && (
             <span className="line-through mr-1">${original.toFixed(2)}</span>

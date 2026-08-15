@@ -19,6 +19,8 @@ create table if not exists public.listings (
   confidence                text not null default 'medium',
   flags                     jsonb not null default '[]'::jsonb,
   photos                    jsonb not null default '[]'::jsonb,
+  quantity                  integer not null default 1,
+  sold_quantity             integer not null default 0,
   posted_at                 timestamptz,
   sold_at                   timestamptz,
   sale_price                numeric(10,2),
@@ -28,6 +30,11 @@ create table if not exists public.listings (
   price_history             jsonb not null default '[]'::jsonb,
   created_at                timestamptz not null default now()
 );
+
+-- Migration for databases created before multi-quantity support (2026-08):
+-- `create table if not exists` won't add columns to an existing table.
+alter table public.listings add column if not exists quantity      integer not null default 1;
+alter table public.listings add column if not exists sold_quantity integer not null default 0;
 
 create index if not exists listings_status_idx     on public.listings (status);
 create index if not exists listings_created_at_idx on public.listings (created_at desc);

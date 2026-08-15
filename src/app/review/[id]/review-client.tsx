@@ -170,6 +170,12 @@ export default function ReviewClient({
           )}
         </Field>
 
+        <QuantityStepper
+          quantity={listing.quantity ?? 1}
+          editable={listing.status === "draft"}
+          onChange={(quantity) => save({ quantity })}
+        />
+
         <Field
           label="Condition"
           editing={editing === "condition"}
@@ -267,6 +273,68 @@ export default function ReviewClient({
         </button>
       </div>
     </main>
+  );
+}
+
+function QuantityStepper({
+  quantity,
+  editable,
+  onChange,
+}: {
+  quantity: number;
+  editable: boolean;
+  onChange: (q: number) => Promise<void> | void;
+}) {
+  // Local busy flag so rapid taps can't race overlapping PATCHes.
+  const [busy, setBusy] = useState(false);
+
+  async function step(delta: number) {
+    const next = quantity + delta;
+    if (next < 1 || busy) return;
+    setBusy(true);
+    try {
+      await onChange(next);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
+      <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">
+        Quantity
+      </div>
+      {editable ? (
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            disabled={quantity <= 1 || busy}
+            aria-label="Decrease quantity"
+            className="h-10 w-10 rounded-full border border-zinc-300 dark:border-zinc-700 text-xl leading-none disabled:opacity-30"
+          >
+            −
+          </button>
+          <span className="text-xl font-semibold w-10 text-center tabular-nums">
+            {quantity}
+          </span>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            disabled={busy}
+            aria-label="Increase quantity"
+            className="h-10 w-10 rounded-full border border-zinc-300 dark:border-zinc-700 text-xl leading-none disabled:opacity-30"
+          >
+            +
+          </button>
+          <span className="text-xs text-zinc-500">
+            identical units — one listing sells up to this many
+          </span>
+        </div>
+      ) : (
+        <p className="text-base">{quantity}</p>
+      )}
+    </div>
   );
 }
 

@@ -37,6 +37,8 @@ interface Row {
   confidence: "high" | "medium" | "low";
   flags: string[];
   photos: string[];
+  quantity: number | null;
+  sold_quantity: number | null;
   posted_at: string | null;
   sold_at: string | null;
   sale_price: number | string | null;
@@ -74,6 +76,8 @@ function rowToListing(row: Row): Listing {
     flags: row.flags ?? [],
     photos: row.photos ?? [],
     createdAt: row.created_at,
+    quantity: row.quantity ?? 1,
+    soldQuantity: row.sold_quantity ?? 0,
     postedAt: row.posted_at ?? undefined,
     soldAt: row.sold_at ?? undefined,
     salePrice: numOrUndef(row.sale_price),
@@ -102,6 +106,8 @@ function listingToRow(l: Listing): Row {
     confidence: l.confidence,
     flags: l.flags,
     photos: l.photos,
+    quantity: l.quantity ?? 1,
+    sold_quantity: l.soldQuantity ?? 0,
     posted_at: l.postedAt ?? null,
     sold_at: l.soldAt ?? null,
     sale_price: l.salePrice ?? null,
@@ -131,6 +137,8 @@ const PATCH_COLUMNS: Record<keyof Listing, string> = {
   flags: "flags",
   photos: "photos",
   createdAt: "created_at",
+  quantity: "quantity",
+  soldQuantity: "sold_quantity",
   postedAt: "posted_at",
   soldAt: "sold_at",
   salePrice: "sale_price",
